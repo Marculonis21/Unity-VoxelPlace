@@ -7,16 +7,20 @@ public class OctTree
     public float size {get;}
     public int capacity {get;}
     public bool subdiv {get; private set;}
+
+    public OctTree parent {get; private set;}
     public OctTree[] nodes {get; private set;}
 
     List<GameObject> itemList;
 
-    public OctTree(Vector3 worldCenterPos, float boxSize, int maxCapacity)
+    public OctTree(Vector3 worldCenterPos, float boxSize, int maxCapacity, OctTree nodeParent = null)
     {
         centerPos = worldCenterPos;
         size = boxSize;
         capacity = maxCapacity;
         subdiv = false;
+        parent = nodeParent;
+
         itemList = new List<GameObject>();
     }
 
@@ -27,26 +31,39 @@ public class OctTree
                 (centerPos.z - size < testPos.z && testPos.z < centerPos.z + size));
     }
 
+    float half,x,y,z;
+    OctTree NWU,NEU,SWU,SEU,NWD,NED,SWD,SED;
+    void Subdivide() //subdivision method
+    {
+        half = size/2;
+        x = centerPos.x;
+        y = centerPos.y;
+        z = centerPos.z;
+
+        NWU = new OctTree(new Vector3(x-half,y+half,z+half), size/2, capacity, this);
+        NEU = new OctTree(new Vector3(x+half,y+half,z+half), size/2, capacity, this);
+        SWU = new OctTree(new Vector3(x-half,y+half,z-half), size/2, capacity, this);
+        SEU = new OctTree(new Vector3(x+half,y+half,z-half), size/2, capacity, this);
+
+        NWD = new OctTree(new Vector3(x-half,y-half,z+half), size/2, capacity, this);
+        NED = new OctTree(new Vector3(x+half,y-half,z+half), size/2, capacity, this);
+        SWD = new OctTree(new Vector3(x-half,y-half,z-half), size/2, capacity, this);
+        SED = new OctTree(new Vector3(x+half,y-half,z-half), size/2, capacity, this);
+        
+        nodes = new OctTree[8] {NWU,NEU,SWU,SEU,NWD,NED,SWD,SED};
+
+        subdiv = true;
+    }
+
     public void Insert(GameObject item) //item insertion
     {
+        /*
+        1. Check if it contains it's pos
+        2. If not subdivided and the size is still subdivideable, DO IT!
+        3. If subdivided, PUSH the insertion to other nodes
+        4. If not subdivided, ADD the item to the list 
+        */
         if (!Contains(item.transform.position)) return;
-
-        // if (itemList.Count < capacity)
-        // {
-        //     itemList.Add(item);
-        // }
-        // else
-        // {
-        //     if (!subdiv )
-        //     {
-        //         Subdivide();
-        //     }
-
-        //     for (int i = 0; i < nodes.Length; i++)
-        //     {
-        //         nodes[i].Insert(item);
-        //     }
-        // }
 
         if (!subdiv && size > item.transform.localScale.x/2)
         {
@@ -60,39 +77,133 @@ public class OctTree
                 nodes[i].Insert(item);
             }
         }
+        else
+        {
+            itemList.Add(item);
+        }
 
     }
 
-    float half,x,y,z;
-    OctTree NWU,NEU,SWU,SEU,NWD,NED,SWD,SED;
-    void Subdivide() //subdivision method
+    bool ItemsInChildren() //looks for any other item in all child-branches
     {
-        half = size/2;
-        x = centerPos.x;
-        y = centerPos.y;
-        z = centerPos.z;
-
-        NWU = new OctTree(new Vector3(x-half,y+half,z+half), size/2, capacity);
-        NEU = new OctTree(new Vector3(x+half,y+half,z+half), size/2, capacity);
-        SWU = new OctTree(new Vector3(x-half,y+half,z-half), size/2, capacity);
-        SEU = new OctTree(new Vector3(x+half,y+half,z-half), size/2, capacity);
-
-        NWD = new OctTree(new Vector3(x-half,y-half,z+half), size/2, capacity);
-        NED = new OctTree(new Vector3(x+half,y-half,z+half), size/2, capacity);
-        SWD = new OctTree(new Vector3(x-half,y-half,z-half), size/2, capacity);
-        SED = new OctTree(new Vector3(x+half,y-half,z-half), size/2, capacity);
+        /*
+        1. Loop through all nodes of SUBDIVIDED branch
+        2. If it's node is subdivided, loop through all it's nodes again (has to be subidivided 
+        to look for children - otherwise look directly for amount of items in list)
+        3. If the node is NOT subdivided, check amount of items in list.
         
-        nodes = new OctTree[8] {NWU,NEU,SWU,SEU,NWD,NED,SWD,SED};
+        (In all steps we are looking just for single one item -> returns true and ends process)
+        */
 
-        subdiv = true;
+        foreach (var node in nodes)
+        {
+            if (node.subdiv)
+            {
+                foreach (var n in node.nodes)
+                {
+                    if (n.subdiv) 
+                    {
+                        if (n.ItemsInChildren()) return true;
+                    }
+                    else if (n.itemList.Count > 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+            else if (node.itemList.Count > 0)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
-    bool IsNeighbor(Vector3 searchCenter, float searchSize)
+    public void Remove(GameObject item) //removes item from the tree + reworks branches appropriately
     {
-        // return ((searchCenter.x < centerPos.x + size && searchCenter.x > centerPos.x - size) &&
-        //         (searchCenter.y < centerPos.y + size && searchCenter.y > centerPos.y - size) &&
-        //         (searchCenter.z < centerPos.z + size && searchCenter.z > centerPos.z - size));
+        /*
+        1. Check if it contains it's pos
+        2. If subdivided, push search to other nodes - don't continue for god's sake! (hell let's loose)
+        3. If not subdivided and the item is contained in this list, REMOVE it and check for other 
+        items in this parent. If non are found, de-subdivide parent and push remove to the parent.
+        4. (step for re-recall of remove on parent) 
+        If the parent is not null (orig branch), check for other items in it's parent. If non are 
+        found, de-subdivide it's parent and push remove to the parent.
 
+        LOOKS AWFUL!!! -> IT WAS AWFUL TO THINK ABOUT ALL THE RECURSION!!!
+        */
+
+        if (!Contains(item.transform.position)) return;
+
+        if (subdiv)
+        {
+            foreach (var node in nodes)
+            {
+                node.Remove(item);
+            }
+            return;
+        }
+
+        if (itemList.Contains(item))
+        {
+            itemList.Remove(item);
+
+            if (!parent.ItemsInChildren())
+            {
+                this.parent.subdiv = false;
+                this.parent.Remove(item);
+            }  
+        }
+        else
+        {
+            if (this.parent != null)
+            {
+                if (!parent.ItemsInChildren())
+                {
+                    this.parent.subdiv = false;
+                    this.parent.Remove(item);
+                }
+            }
+        }
+    }
+
+    // public List<OctTree> FindFullParent(GameObject item) //test for finding parent branches of items
+    // {
+    //     List<OctTree> found = new List<OctTree>();
+
+    //     if (!Contains(item.transform.position)) return found;
+     
+    //     if (subdiv)
+    //     {
+    //         foreach (var node in nodes)
+    //         {
+    //             found.AddRange(node.FindFullParent(item));
+    //         }
+    //         return found;
+    //     }
+
+    //     if (itemList.Contains(item))
+    //     {
+    //         found.AddRange(parent.nodes);
+    //         foreach (var n in parent.nodes)
+    //         {
+    //             foreach (var obj in n.itemList)
+    //             {
+    //                 obj.transform.gameObject.GetComponent<Renderer>().material.color = Random.ColorHSV();
+    //             }
+    //         }
+    //     }
+    //     return found;
+    // }
+  
+    bool IsNeighbor(Vector3 searchCenter, float searchSize) //check if this cube is neighbor of searched one
+    {
+        /* 
+        BUNCH OF POSITIONAL RULES TO TEST THE POS RELATION OF CHECKED CELLS
+
+        ABLE TO FIND NEIGHBORING CELLS OF ALL SIZES (the center is always the smallest)
+        */
+        
         var SC = searchCenter;
         var CP = centerPos;
         var ss = searchSize/2;
@@ -120,14 +231,23 @@ public class OctTree
 
     }
 
-    public IEnumerable<OctTree> FindNeighborCells(Vector3 searchCenter, float searchSize)
+    public List<OctTree> FindNeighborCells(Vector3 searchCenter, float searchSize) //returns found neighboring cells (6)
     {
+        /*
+        1. FOUND list
+        2. If subdivided, loop through all nodes and try to find neighboring cells there, add the 
+        possible range of found to FOUND list
+        3. If not subdivide, do the search (from center search pos, size - of the cell)
+        4. If found, add to FOUND list
+        5. Return current FOUND  
+        */
+
         List<OctTree> found = new List<OctTree>();
         if (subdiv)
         {
-            for (int i = 0; i < nodes.Length; i++)
+            foreach (var node in nodes)
             {
-                found.AddRange(nodes[i].FindNeighborCells(searchCenter, searchSize));
+                found.AddRange(node.FindNeighborCells(searchCenter, searchSize));
             }
             return found;
         }

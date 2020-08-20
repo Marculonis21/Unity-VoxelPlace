@@ -22,12 +22,31 @@ public class OTWrapper : MonoBehaviour
     void Start()
     {
         objects = new List<GameObject>();
+        OT = new OctTree(this.transform.position, boxSize, treeCapacity, null);
+
     }
 
+    private List<OctTree> foundParent;
     private List<OctTree> found;
     void Update() 
     {     
-        if(Input.GetMouseButton(1))
+        if(Input.GetKeyDown(KeyCode.Space))
+        {
+            RaycastHit hit;
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            
+            if (Physics.Raycast(ray, out hit)) {
+                GameObject selected = hit.transform.gameObject;
+                Debug.Log(selected.transform.gameObject);
+                // foundParent = new List<OctTree>();
+                // foundParent.AddRange(OT.FindFullParent(selected));
+                OT.Remove(selected);
+                objects.Remove(selected);
+                selected.SetActive(false);
+            }
+        }
+
+        if(Input.GetMouseButtonDown(1))
         {
             RaycastHit hit;
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
@@ -67,12 +86,14 @@ public class OTWrapper : MonoBehaviour
                         if (!(Physics.OverlapBox(position, new Vector3(overlapBox,overlapBox,overlapBox), spawnRot, LayerMask.NameToLayer("plane")).Length > 0))
                         {
                             if (position.y < 0.5f) return;
-
+                            if (!(Mathf.Abs(0.75f + position.x) < 8.25f) || !(Mathf.Abs(0.75f + position.z) < 8.25f)) return;
+                            
                             var obj = pooler.GetPooledObject(prefab);
                             obj.transform.position += position;
                             obj.transform.rotation = spawnRot;
                             obj.SetActive(true);
                             objects.Add(obj);
+                            OT.Insert(obj);
                             break;
                         }
                     }
@@ -86,6 +107,7 @@ public class OTWrapper : MonoBehaviour
                     obj.transform.rotation = spawnRot;
                     obj.SetActive(true);
                     objects.Add(obj);
+                    OT.Insert(obj);
                 }                
             }
         }
@@ -93,12 +115,12 @@ public class OTWrapper : MonoBehaviour
 
     void FixedUpdate() 
     {
-        OT = new OctTree(this.transform.position, boxSize, treeCapacity);
+        // OT = new OctTree(this.transform.position, boxSize, treeCapacity);
 
-        foreach (var item in objects)
-        {
-            OT.Insert(item);
-        }
+        // foreach (var item in objects)
+        // {
+        //     OT.Insert(item);
+        // }
     }
 
     void DrawTree(OctTree tree, Color color)
@@ -121,16 +143,17 @@ public class OTWrapper : MonoBehaviour
         }
     }
 
-    void DrawFound(Color color)
+    void DrawFound(List<OctTree> list, Color color)
     {
         Gizmos.color = color;
-        foreach (var item in found)
+        foreach (var item in list)
         {
             Gizmos.DrawWireCube(item.centerPos,new Vector3(item.size*2,item.size*2,item.size*2));
         }
     }
 
-    void OnDrawGizmos() {
+    void OnDrawGizmos() 
+    {
         if (DRAWTREE)
         {
             DrawTree(OT, Color.white);
@@ -139,8 +162,12 @@ public class OTWrapper : MonoBehaviour
         {
             if (found != null)
             {
-                DrawFound(Color.green);
+                DrawFound(found, Color.green);
             }
+        }
+        if (foundParent != null)
+        {
+            DrawFound(foundParent, Color.blue);
         }
     }
 }
