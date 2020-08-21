@@ -1,5 +1,5 @@
 *Marek Bečvář*
-https://twitter.com/MaBecvar
+[My twitter account](https://twitter.com/MaBecvar "Twitter Account")
 
 # VoxelPlayground - Unity
 
